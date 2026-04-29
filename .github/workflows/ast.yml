@@ -25,7 +25,7 @@ jobs:
     runs-on: ubuntu-latest
     container:
       # Corrected image name from the Docker Hub link you provided
-      image: convisoappsec/convisocli:latest
+      image: convisoappsec/convisoast:latest
       env:
         CONVISO_API_KEY: ${{ secrets.CONVISO_API_KEY }}
 
