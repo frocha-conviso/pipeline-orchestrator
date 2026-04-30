@@ -19,7 +19,10 @@ on:
         description: 'Pull request number'
         required: true
         type: string
-
+      api_url:
+        description: 'Conviso Platform URL'
+        required: false
+        type: string
 jobs:
   run-ast-scan:
     runs-on: ubuntu-latest
