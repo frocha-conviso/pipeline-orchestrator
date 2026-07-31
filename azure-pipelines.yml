@@ -1,0 +1,83 @@
+
+parameters:
+  - name: repo_full_name
+    type: string
+  - name: branch
+    type: string
+  - name: api_url
+    type: string
+    default: 'https://app.convisoappsec.com'
+  - name: company_id
+    type: string
+    default: ''   
+  - name: asset_id
+    type: string
+    default: ''
+  - name: scan_run_id
+    type: string
+    default: ''
+  - name: commit_sha
+    type: string
+    default: ''
+  - name: pr_number
+    type: string
+    default: ''
+
+trigger: none
+pr: none
+
+variables:
+  - name: CONVISO_COMPANY_ID
+    value: ''
+
+pool:
+  vmImage: ubuntu-latest
+
+container: convisoappsec/convisoast_v2:latest
+
+steps:
+  - checkout: none
+
+  - script: |
+      set -e
+      TOKEN=$(conviso-ast-repository-token --provider azure_devops)
+      # issecret=true keeps Azure from echoing the value in any later log line.
+      echo "##vso[task.setvariable variable=REPO_TOKEN;issecret=true]$TOKEN"
+    displayName: Get repository token
+    env:
+      CONVISO_APIKEY: $(CONVISO_API_KEY)
+      CONVISO_BASE_URL: ${{ parameters.api_url }}
+      CONVISO_REPO_FULL_NAME: ${{ parameters.repo_full_name }}
+      CONVISO_ASSET_ID: ${{ parameters.asset_id }}
+      CONVISO_SCAN_RUN_ID: ${{ parameters.scan_run_id }}
+
+  - script: |
+      set -e
+      git clone --branch "${{ parameters.branch }}" \
+        "https://$(REPO_TOKEN)@dev.azure.com/${{ parameters.repo_full_name }}" target
+    displayName: Clone target repository
+
+  - script: |
+      set -e
+      cd target
+      export CONVISO_COMPANY_ID="${PARAM_COMPANY_ID:-$VAR_COMPANY_ID}"
+      conviso-ast -p . -o "$(Build.ArtifactStagingDirectory)/conviso-ast-session.zip"
+    displayName: Run Conviso AST
+    env:
+      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_KEY_0: safe.directory
+      GIT_CONFIG_VALUE_0: '*'
+      CONVISO_APIKEY: $(CONVISO_API_KEY)
+      CONVISO_BASE_URL: ${{ parameters.api_url }}
+      PARAM_COMPANY_ID: ${{ parameters.company_id }}
+      VAR_COMPANY_ID: $(CONVISO_COMPANY_ID)
+      CONVISO_ASSET_ID: ${{ parameters.asset_id }}
+      CONVISO_SCAN_RUN_ID: ${{ parameters.scan_run_id }}
+      CONVISO_BRANCH: ${{ parameters.branch }}
+
+  - task: PublishBuildArtifacts@1
+    condition: always()
+    displayName: Upload session log
+    inputs:
+      PathtoPublish: $(Build.ArtifactStagingDirectory)
+      ArtifactName: conviso-ast-session
