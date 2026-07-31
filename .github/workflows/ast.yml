@@ -8,44 +8,82 @@ on:
         required: true
         type: string
       branch:
-        description: 'Branch that was merged'
-        required: true
-        type: string
-      commit_sha:
-        description: 'Merge commit SHA'
-        required: true
-        type: string
-      pr_number:
-        description: 'Pull request number'
+        description: 'Branch to scan'
         required: true
         type: string
       api_url:
         description: 'Conviso Platform URL'
         required: false
         type: string
+      company_id:
+        description: 'Conviso company id. When empty the CONVISO_COMPANY_ID variable is used'
+        required: false
+        type: string
+      asset_id:
+        description: 'Conviso asset id. When empty the scanner resolves the asset by repository name'
+        required: false
+        type: string
+      scan_run_id:
+        description: 'Scan run created by the platform. Correlates this execution with the run shown in the UI'
+        required: false
+        type: string
+      commit_sha:
+        description: 'Merge commit SHA (post-merge scans only)'
+        required: false
+        type: string
+      pr_number:
+        description: 'Pull request number (post-merge scans only)'
+        required: false
+        type: string
+
 jobs:
   run-ast-scan:
     runs-on: ubuntu-latest
     container:
-      image: convisoappsec/convisoast:latest
-      env:
-        CONVISO_API_KEY: ${{ secrets.CONVISO_API_KEY }}
+      image: convisoappsec/convisoast_v2:latest
 
     steps:
+      - name: Get repository token
+        id: repo_token
+        env:
+          CONVISO_APIKEY: ${{ secrets.CONVISO_API_KEY }}
+          CONVISO_BASE_URL: ${{ inputs.api_url || 'https://app.convisoappsec.com' }}
+          CONVISO_REPO_FULL_NAME: ${{ inputs.repo_full_name }}
+          CONVISO_ASSET_ID: ${{ inputs.asset_id }}
+          CONVISO_SCAN_RUN_ID: ${{ inputs.scan_run_id }}
+        run: |
+          TOKEN=$(conviso-ast-repository-token --provider github)
+          # Mask BEFORE the value reaches the step output, so it can never surface
+          # in this job's log.
+          echo "::add-mask::$TOKEN"
+          echo "token=$TOKEN" >> "$GITHUB_OUTPUT"
+
       - name: Checkout target repository
         uses: actions/checkout@v6
         with:
           repository: ${{ inputs.repo_full_name }}
           ref: ${{ inputs.branch }}
           fetch-depth: 0
+          token: ${{ steps.repo_token.outputs.token }}
 
-      - name: Run Conviso AST Scan
+      - name: Run Conviso AST
+        env:
+          CONVISO_APIKEY: ${{ secrets.CONVISO_API_KEY }}
+          CONVISO_BASE_URL: ${{ inputs.api_url || 'https://app.convisoappsec.com' }}
+          CONVISO_COMPANY_ID: ${{ inputs.company_id || vars.CONVISO_COMPANY_ID }}
+          CONVISO_ASSET_ID: ${{ inputs.asset_id }}
+          CONVISO_SCAN_RUN_ID: ${{ inputs.scan_run_id }}
+          CONVISO_BRANCH: ${{ inputs.branch }}
+          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_KEY_0: safe.directory
+          GIT_CONFIG_VALUE_0: '*'
         run: |
-          echo "Starting AST scan for ${{ inputs.repo_full_name }}"
-          # Running AST scan without security gate enforcement (non-blocking)
-          conviso ast run --vulnerability-auto-close --company-id 520
+          conviso-ast -p . -o /tmp/conviso-ast-session.zip
 
-      - name: Report results
+      - name: Upload session log
         if: always()
-        run: |
-          echo "Scan process finished for PR #${{ inputs.pr_number }}"
+        uses: actions/upload-artifact@v4
+        with:
+          name: conviso-ast-session
+          path: /tmp/conviso-ast-session.zip
+          if-no-files-found: ignore
