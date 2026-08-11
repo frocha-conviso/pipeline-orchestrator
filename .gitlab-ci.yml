@@ -15,14 +15,14 @@ run-ast-scan:
     - export CONVISO_ASSET_ID="$asset_id"
     - export CONVISO_SCAN_RUN_ID="$scan_run_id"
     - umask 077 && conviso-ast-repository-token --provider gitlab > repo_token
-    - git clone --branch "$branch" "https://oauth2:$(cat repo_token)@${CI_SERVER_HOST}/${repo_full_name}.git" target
+    - |
+      git clone --branch "$branch" \
+        "https://oauth2:$(cat repo_token)@${CI_SERVER_HOST}/${repo_full_name}.git" target
     - rm -f repo_token
     - cd target
     - export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
- 
     - export CONVISO_COMPANY_ID="${company_id:-$CONVISO_COMPANY_ID}"
     - export CONVISO_BRANCH="$branch"
-
     - conviso-ast -p . -o "$CI_PROJECT_DIR/conviso-ast-session.zip"
   artifacts:
     when: always

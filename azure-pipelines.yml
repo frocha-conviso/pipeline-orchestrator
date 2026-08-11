@@ -1,4 +1,3 @@
-
 parameters:
   - name: repo_full_name
     type: string
@@ -6,29 +5,29 @@ parameters:
     type: string
   - name: api_url
     type: string
-    default: 'https://app.convisoappsec.com'
+    default: "https://app.convisoappsec.com"
   - name: company_id
     type: string
-    default: ''   
+    default: ""
   - name: asset_id
     type: string
-    default: ''
+    default: ""
   - name: scan_run_id
     type: string
-    default: ''
+    default: ""
   - name: commit_sha
     type: string
-    default: ''
+    default: ""
   - name: pr_number
     type: string
-    default: ''
+    default: ""
 
 trigger: none
 pr: none
 
 variables:
   - name: CONVISO_COMPANY_ID
-    value: ''
+    value: ""
 
 pool:
   vmImage: ubuntu-latest
@@ -39,7 +38,7 @@ steps:
   - checkout: none
 
   - script: |
-      set -e
+      set -euo pipefail
       TOKEN=$(conviso-ast-repository-token --provider azure_devops)
       # issecret=true keeps Azure from echoing the value in any later log line.
       echo "##vso[task.setvariable variable=REPO_TOKEN;issecret=true]$TOKEN"
@@ -52,21 +51,32 @@ steps:
       CONVISO_SCAN_RUN_ID: ${{ parameters.scan_run_id }}
 
   - script: |
-      set -e
-      git clone --branch "${{ parameters.branch }}" \
-        "https://$(REPO_TOKEN)@dev.azure.com/${{ parameters.repo_full_name }}" target
+      set -euo pipefail
+      # repo_full_name is organization/project/repository
+      org=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f1)
+      project=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f2)
+      repo=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f3-)
+      if [ -z "$org" ] || [ -z "$project" ] || [ -z "$repo" ] || [ "$repo" = "$REPO_FULL_NAME" ]; then
+        echo "##vso[task.logissue type=error]repo_full_name must be organization/project/repository (got: ${REPO_FULL_NAME})"
+        exit 1
+      fi
+      git clone --branch "$BRANCH" \
+        "https://$(REPO_TOKEN)@dev.azure.com/${org}/${project}/_git/${repo}" target
     displayName: Clone target repository
+    env:
+      REPO_FULL_NAME: ${{ parameters.repo_full_name }}
+      BRANCH: ${{ parameters.branch }}
 
   - script: |
-      set -e
+      set -euo pipefail
       cd target
       export CONVISO_COMPANY_ID="${PARAM_COMPANY_ID:-$VAR_COMPANY_ID}"
       conviso-ast -p . -o "$(Build.ArtifactStagingDirectory)/conviso-ast-session.zip"
     displayName: Run Conviso AST
     env:
-      GIT_CONFIG_COUNT: '1'
+      GIT_CONFIG_COUNT: "1"
       GIT_CONFIG_KEY_0: safe.directory
-      GIT_CONFIG_VALUE_0: '*'
+      GIT_CONFIG_VALUE_0: "*"
       CONVISO_APIKEY: $(CONVISO_API_KEY)
       CONVISO_BASE_URL: ${{ parameters.api_url }}
       PARAM_COMPANY_ID: ${{ parameters.company_id }}

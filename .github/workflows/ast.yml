@@ -4,35 +4,35 @@ on:
   workflow_dispatch:
     inputs:
       repo_full_name:
-        description: 'Repository to scan (owner/repo)'
+        description: "Repository to scan (owner/repo)"
         required: true
         type: string
       branch:
-        description: 'Branch to scan'
+        description: "Branch to scan"
         required: true
         type: string
       api_url:
-        description: 'Conviso Platform URL'
+        description: "Conviso Platform URL"
         required: false
         type: string
       company_id:
-        description: 'Conviso company id. When empty the CONVISO_COMPANY_ID variable is used'
+        description: "Conviso company id. When empty the CONVISO_COMPANY_ID variable is used"
         required: false
         type: string
       asset_id:
-        description: 'Conviso asset id. When empty the scanner resolves the asset by repository name'
+        description: "Conviso asset id. When empty the scanner resolves the asset by repository name"
         required: false
         type: string
       scan_run_id:
-        description: 'Scan run created by the platform. Correlates this execution with the run shown in the UI'
+        description: "Scan run created by the platform. Correlates this execution with the run shown in the UI"
         required: false
         type: string
       commit_sha:
-        description: 'Merge commit SHA (post-merge scans only)'
+        description: "Merge commit SHA (post-merge scans only)"
         required: false
         type: string
       pr_number:
-        description: 'Pull request number (post-merge scans only)'
+        description: "Pull request number (post-merge scans only)"
         required: false
         type: string
 
@@ -74,9 +74,9 @@ jobs:
           CONVISO_ASSET_ID: ${{ inputs.asset_id }}
           CONVISO_SCAN_RUN_ID: ${{ inputs.scan_run_id }}
           CONVISO_BRANCH: ${{ inputs.branch }}
-          GIT_CONFIG_COUNT: '1'
+          GIT_CONFIG_COUNT: "1"
           GIT_CONFIG_KEY_0: safe.directory
-          GIT_CONFIG_VALUE_0: '*'
+          GIT_CONFIG_VALUE_0: "*"
         run: |
           conviso-ast -p . -o /tmp/conviso-ast-session.zip
 
