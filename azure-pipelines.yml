@@ -23,6 +23,9 @@ parameters:
   - name: scan_run_id
     type: string
     default: ""
+  - name: repo_url
+    type: string
+    default: ""
 
 trigger: none
 pr: none
@@ -86,57 +89,53 @@ steps:
 
   - script: |
       set -euo pipefail
-      parts=$(printf '%s' "$REPO_FULL_NAME" | awk -F/ '{print NF}')
-      case "$parts" in
-        2)
-          export ORG=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f1)
-          export REPO=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f2)
-          unset PROJECT || true
-          ;;
-        3)
-          export ORG=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f1)
-          export PROJECT=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f2)
-          export REPO=$(printf '%s' "$REPO_FULL_NAME" | cut -d/ -f3-)
-          ;;
-        *)
-          echo "##vso[task.logissue type=error]repo_full_name must be organization/repository. Got: ${REPO_FULL_NAME}"
-          exit 1
-          ;;
-      esac
-
+      # Prefer repo_url from the platform (asset.repo_url). Azure webhooks send
+      # project/repo while clone needs org/project/repo — reconstructing from
+      # repo_full_name alone is unreliable.
       REMOTE_URL=$(python3 -c '
       import base64, json, os, urllib.request
       from urllib.parse import urlsplit, urlunsplit
 
-      org = os.environ["ORG"]
-      repo = os.environ["REPO"]
       token = os.environ["REPO_TOKEN"]
-      project = os.environ.get("PROJECT", "")
+      repo_url = (os.environ.get("REPO_URL") or "").strip()
+      repo_full_name = (os.environ.get("REPO_FULL_NAME") or "").strip()
 
-      if project:
-          remote = f"https://dev.azure.com/{org}/{project}/_git/{repo}"
-      else:
-          req = urllib.request.Request(
-              f"https://dev.azure.com/{org}/_apis/git/repositories?api-version=7.1",
-              headers={"Authorization": "Basic " + base64.b64encode((":" + token).encode()).decode()},
+      def strip_auth(remote: str) -> str:
+          parts = urlsplit(remote)
+          host = parts.hostname or ""
+          if parts.port:
+              host = f"{host}:{parts.port}"
+          return urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+      if repo_url:
+          print(strip_auth(repo_url))
+          raise SystemExit(0)
+
+      parts = repo_full_name.split("/")
+      if len(parts) == 3:
+          org, project, repo = parts[0], parts[1], "/".join(parts[2:])
+          print(strip_auth(f"https://dev.azure.com/{org}/{project}/_git/{repo}"))
+          raise SystemExit(0)
+
+      if len(parts) != 2:
+          raise SystemExit(f"repo_full_name must be organization/repository. Got: {repo_full_name!r}")
+
+      org, repo = parts
+      req = urllib.request.Request(
+          f"https://dev.azure.com/{org}/_apis/git/repositories?api-version=7.1",
+          headers={"Authorization": "Basic " + base64.b64encode((":" + token).encode()).decode()},
+      )
+      with urllib.request.urlopen(req, timeout=60) as resp:
+          data = json.load(resp)
+      matches = [r for r in data.get("value", []) if r.get("name") == repo]
+      if not matches:
+          raise SystemExit(f"Azure returned no repository named {repo!r} in org {org!r}")
+      if len(matches) > 1:
+          raise SystemExit(
+              f"Multiple Azure repositories named {repo!r} in org {org!r}; "
+              "platform must send repo_url"
           )
-          with urllib.request.urlopen(req, timeout=60) as resp:
-              data = json.load(resp)
-          matches = [r for r in data.get("value", []) if r.get("name") == repo]
-          if not matches:
-              raise SystemExit(f"Azure returned no repository named {repo!r} in org {org!r}")
-          if len(matches) > 1:
-              raise SystemExit(
-                  f"Multiple Azure repositories named {repo!r} in org {org!r}; "
-                  "use organization/project/repository"
-              )
-          remote = matches[0]["remoteUrl"]
-
-      parts = urlsplit(remote)
-      host = parts.hostname or ""
-      if parts.port:
-          host = f"{host}:{parts.port}"
-      print(urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment)))
+      print(strip_auth(matches[0]["remoteUrl"]))
       ')
 
       rm -rf target
@@ -153,6 +152,7 @@ steps:
     displayName: Clone target repository
     env:
       REPO_FULL_NAME: ${{ parameters.repo_full_name }}
+      REPO_URL: ${{ parameters.repo_url }}
       BRANCH: ${{ parameters.branch }}
       COMMIT_SHA: ${{ parameters.commit_sha }}
       REPO_TOKEN: $(REPO_TOKEN)
