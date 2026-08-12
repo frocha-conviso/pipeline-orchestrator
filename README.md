@@ -9,7 +9,7 @@ Two flows use the same pipeline:
 
 | Flow | Trigger | Extra inputs |
 |---|---|---|
-| Post-merge scan | A pull/merge request is merged | `commit_sha`, `pr_number` (Bitbucket: `pr_id`) |
+| Post-merge scan | A pull/merge request is merged | `commit_sha`, `pr_number` |
 | Run AST (on demand) | Someone clicks **Run AST** on an asset in the platform | `scan_run_id` |
 
 ## Setup
@@ -66,37 +66,36 @@ fill in the Orchestrator Configuration:
 
 ## Inputs
 
-The platform sends these; the pipeline maps them to the environment the scanner reads.
+Every provider receives the same inputs, in this order (matches the Platform dispatcher):
 
 | Input | Environment variable | Notes |
 |---|---|---|
-| `repo_full_name` | `CONVISO_REPO_FULL_NAME` | Repository to scan. GitHub/GitLab/Bitbucket: `owner/repo`. Azure: `organization/project/repository`. Required |
+| `repo_full_name` | `CONVISO_REPO_FULL_NAME` | Repository to scan (`owner/repo` or GitLab path). Required |
 | `branch` | `CONVISO_BRANCH` | Branch to scan. Required |
-| `api_url` | `CONVISO_BASE_URL` | Defaults to `https://app.convisoappsec.com` |
-| `company_id` | `CONVISO_COMPANY_ID` | Sent only by **Run AST**. When absent the pipeline uses the `CONVISO_COMPANY_ID` variable |
-| `asset_id` | `CONVISO_ASSET_ID` | Empty means the scanner resolves the asset by repository name |
-| `scan_run_id` | `CONVISO_SCAN_RUN_ID` | Links this execution to the run shown in the platform |
-| `commit_sha`, `pr_number` | — | Post-merge scans only. Bitbucket receives `pr_id` instead of `pr_number`. |
+| `commit_sha` | — | Post-merge only |
+| `pr_number` | — | Post-merge only. Wire renames: Bitbucket `pr_id`, GitLab `mr_iid` |
+| `api_url` | `CONVISO_BASE_URL` | Defaults to `https://api.convisoappsec.com` |
+| `company_id` | `CONVISO_COMPANY_ID` | Sent by **Run AST**; otherwise the project variable is used |
+| `asset_id` | `CONVISO_ASSET_ID` | Empty means resolve by repository name |
+| `scan_run_id` | `CONVISO_SCAN_RUN_ID` | Links this execution to the run in the platform |
 
-`CONVISO_APIKEY`, `CONVISO_BASE_URL` and `CONVISO_COMPANY_ID` are required by the scanner —
-a run without them fails at startup. The secret you create is named `CONVISO_API_KEY`; the
-pipeline passes it to the scanner as `CONVISO_APIKEY`, which is the name the scanner reads.
+`CONVISO_APIKEY`, `CONVISO_BASE_URL` and `CONVISO_COMPANY_ID` are required by the scanner.
+The secret you create is named `CONVISO_API_KEY`; the pipeline maps it to `CONVISO_APIKEY`.
+
+Providers differ only where the CI forces it: `--provider`, clone URL/auth, and YAML syntax.
+Azure also needs an empty container entrypoint and publishes artifacts from the host.
 
 ## How the clone credential is obtained
 
-The scanner image ships `conviso-ast-repository-token`, which reads the variables above and
-prints a credential for the repository under scan:
+The scanner image ships `conviso-ast-repository-token`, which prints a credential for the
+repository under scan:
 
 ```bash
 conviso-ast-repository-token --provider github         # or gitlab, azure_devops, bitbucket
 ```
 
-The pipeline calls it before checkout and hands the result to the clone step. It lives in the
-image rather than in this file so a fix reaches you through a scanner release, instead of
-requiring you to re-copy the template.
-
-It prints **only** the token on stdout — errors go to stderr and exit non-zero — so it is safe
-to read with `$(...)`.
+The pipeline calls it before checkout and hands the result to the clone step. It prints
+**only** the token on stdout — errors go to stderr and exit non-zero.
 
 ## Keeping it current
 

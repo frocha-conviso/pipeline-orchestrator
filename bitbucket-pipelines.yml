@@ -2,23 +2,21 @@ image: convisoappsec/convisoast_v2:latest
 
 pipelines:
   custom:
-    # Name must stay run-ast-scan — that is the selector Conviso triggers.
     run-ast-scan:
       - variables:
           - name: repo_full_name
           - name: branch
+          - name: commit_sha
+            default: ""
+          - name: pr_id
+            default: ""
           - name: api_url
-            default: https://app.convisoappsec.com
+            default: https://api.convisoappsec.com
           - name: company_id
             default: ""
           - name: asset_id
             default: ""
           - name: scan_run_id
-            default: ""
-          - name: commit_sha
-            default: ""
-          # Platform canonical input is pr_number; Bitbucket dispatcher renames to pr_id.
-          - name: pr_id
             default: ""
       - step:
           name: Run Conviso AST
@@ -26,10 +24,27 @@ pipelines:
             enabled: false
           script:
             - export CONVISO_APIKEY="$CONVISO_API_KEY"
-            - export CONVISO_BASE_URL="${api_url:-https://app.convisoappsec.com}"
+            - |
+              export CONVISO_BASE_URL="${api_url:-https://api.convisoappsec.com}"
+              CONVISO_BASE_URL="${CONVISO_BASE_URL%/}"
+              case "$CONVISO_BASE_URL" in
+                https://app.convisoappsec.com)
+                  export CONVISO_BASE_URL="https://api.convisoappsec.com"
+                  ;;
+                https://staging.convisoappsec.com)
+                  export CONVISO_BASE_URL="https://api.staging.convisoappsec.com"
+                  ;;
+              esac
             - export CONVISO_REPO_FULL_NAME="$repo_full_name"
-            - export CONVISO_ASSET_ID="$asset_id"
-            - export CONVISO_SCAN_RUN_ID="$scan_run_id"
+            - |
+              case "${asset_id:-}" in
+                ""|none|0) unset CONVISO_ASSET_ID || true ;;
+                *) export CONVISO_ASSET_ID="$asset_id" ;;
+              esac
+              case "${scan_run_id:-}" in
+                ""|none|0) unset CONVISO_SCAN_RUN_ID || true ;;
+                *) export CONVISO_SCAN_RUN_ID="$scan_run_id" ;;
+              esac
             - umask 077 && conviso-ast-repository-token --provider bitbucket > repo_token
             - |
               git clone --branch "$branch" \
