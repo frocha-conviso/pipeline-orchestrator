@@ -1,0 +1,59 @@
+image: convisoappsec/convisoast_v2:latest
+
+pipelines:
+  custom:
+    run-ast-scan:
+      - variables:
+          - name: repo_full_name
+          - name: branch
+          - name: commit_sha
+            default: ""
+          - name: pr_id
+            default: ""
+          - name: api_url
+            default: https://api.convisoappsec.com
+          - name: company_id
+            default: ""
+          - name: asset_id
+            default: ""
+          - name: scan_run_id
+            default: ""
+      - step:
+          name: Run Conviso AST
+          clone:
+            enabled: false
+          script:
+            - export CONVISO_APIKEY="$CONVISO_API_KEY"
+            - |
+              export CONVISO_BASE_URL="${api_url:-https://api.convisoappsec.com}"
+              CONVISO_BASE_URL="${CONVISO_BASE_URL%/}"
+              case "$CONVISO_BASE_URL" in
+                https://app.convisoappsec.com)
+                  export CONVISO_BASE_URL="https://api.convisoappsec.com"
+                  ;;
+                https://staging.convisoappsec.com)
+                  export CONVISO_BASE_URL="https://api.staging.convisoappsec.com"
+                  ;;
+              esac
+            - export CONVISO_REPO_FULL_NAME="$repo_full_name"
+            - |
+              case "${asset_id:-}" in
+                ""|none|0) unset CONVISO_ASSET_ID || true ;;
+                *) export CONVISO_ASSET_ID="$asset_id" ;;
+              esac
+              case "${scan_run_id:-}" in
+                ""|none|0) unset CONVISO_SCAN_RUN_ID || true ;;
+                *) export CONVISO_SCAN_RUN_ID="$scan_run_id" ;;
+              esac
+            - umask 077 && conviso-ast-repository-token --provider bitbucket > repo_token
+            - |
+              git clone --branch "$branch" \
+                "https://x-token-auth:$(cat repo_token)@bitbucket.org/${repo_full_name}.git" target
+            - rm -f repo_token
+            - cd target
+            - export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
+            - export CONVISO_COMPANY_ID="${company_id:-$CONVISO_COMPANY_ID}"
+            - export CONVISO_BRANCH="$branch"
+            - conviso-ast -p . -o "$BITBUCKET_CLONE_DIR/conviso-ast-session.zip"
+          artifacts:
+            - conviso-ast-session.zip

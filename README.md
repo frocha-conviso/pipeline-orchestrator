@@ -15,8 +15,13 @@ Two flows use the same pipeline:
 ## Setup
 
 **1. Copy this repository** into your organization. Keep only the file for your provider:
-`.github/workflows/ast.yml` (GitHub), `.gitlab-ci.yml` (GitLab) or `azure-pipelines.yml`
-(Azure DevOps).
+
+| Provider | Keep this file |
+|---|---|
+| GitHub | `.github/workflows/ast.yml` |
+| GitLab | `.gitlab-ci.yml` |
+| Azure DevOps | `azure-pipelines.yml` |
+| Bitbucket Cloud | `bitbucket-pipelines.yml` |
 
 **2. Configure two values** in the orchestrator project:
 
@@ -25,9 +30,8 @@ Two flows use the same pipeline:
 | `CONVISO_API_KEY` | Secret | Your Conviso Platform API key |
 | `CONVISO_COMPANY_ID` | Variable | Your Conviso company id |
 
-On GitHub both live under *Settings > Secrets and variables > Actions*, the first as a
-secret and the second as a variable; on GitLab and Azure DevOps both are pipeline variables,
-with only the API key marked as masked/secret.
+- **GitHub** — both under *Settings > Secrets and variables > Actions* (`CONVISO_API_KEY` as a secret, `CONVISO_COMPANY_ID` as a variable).
+- **GitLab / Azure DevOps / Bitbucket** — both as pipeline/repository variables; only the API key marked as masked/secured.
 
 No personal access token is needed.
 
@@ -37,17 +41,17 @@ sends it on the **Run AST** flow — so the pipeline falls back to this value. W
 platform does send one, the sent value wins.
 
 The credential each CI provider injects by default (`GITHUB_TOKEN`, `CI_JOB_TOKEN`, the build
-service account) only reaches the orchestrator project itself, so it cannot clone the
-repository being scanned. Instead of asking you to store a long-lived token for that, the
-pipeline asks the Conviso Platform for one at the start of every run, using the API key it
-already has. The platform only issues it for repositories your company has imported as
-assets.
+service account, Bitbucket OAuth for the orchestrator repo) only reaches the orchestrator
+project itself, so it cannot clone the repository being scanned. Instead of asking you to
+store a long-lived token for that, the pipeline asks the Conviso Platform for one at the
+start of every run, using the API key it already has. The platform only issues it for
+repositories your company has imported as assets.
 
 On GitHub that credential is a GitHub App installation token restricted to the **single
 repository being scanned**, with **read-only** access to its contents, valid for about an
-hour. On GitLab and Azure DevOps the providers offer no per-repository credential, so the
-integration's own token is used — still issued per run and revocable from the platform,
-but broader in scope.
+hour. On GitLab, Azure DevOps and Bitbucket the providers offer no per-repository
+credential of that kind, so the integration's own token is used — still issued per run and
+revocable from the platform, but broader in scope.
 
 **3. Point the platform at the orchestrator** — in the platform, open your integration and
 fill in the Orchestrator Configuration:
@@ -55,43 +59,43 @@ fill in the Orchestrator Configuration:
 - **GitHub** — repository (`owner/repo`), workflow file (`ast.yml`), ref
 - **GitLab** — project id, pipeline ref
 - **Azure DevOps** — organization, project, pipeline id, ref
+- **Bitbucket** — workspace, repository, ref (custom pipeline name must be `run-ast-scan`)
 
 **4. Associate your repositories** in the platform so each one becomes an asset. The
 **Run AST** button appears on repository assets once the steps above are done.
 
 ## Inputs
 
-The platform sends these; the pipeline maps them to the environment the scanner reads.
+Every provider receives the same inputs, in this order (matches the Platform dispatcher):
 
 | Input | Environment variable | Notes |
 |---|---|---|
-| `repo_full_name` | `CONVISO_REPO_FULL_NAME` | Repository to scan, `owner/repo`. Required |
+| `repo_full_name` | `CONVISO_REPO_FULL_NAME` | Repository to scan (`owner/repo` or GitLab path). Required |
 | `branch` | `CONVISO_BRANCH` | Branch to scan. Required |
-| `api_url` | `CONVISO_BASE_URL` | Defaults to `https://app.convisoappsec.com` |
-| `company_id` | `CONVISO_COMPANY_ID` | Sent only by **Run AST**. When absent the pipeline uses the `CONVISO_COMPANY_ID` variable |
-| `asset_id` | `CONVISO_ASSET_ID` | Empty means the scanner resolves the asset by repository name |
-| `scan_run_id` | `CONVISO_SCAN_RUN_ID` | Links this execution to the run shown in the platform |
-| `commit_sha`, `pr_number` | — | Post-merge scans only |
+| `commit_sha` | — | Post-merge only |
+| `pr_number` | — | Post-merge only. Wire renames: Bitbucket `pr_id`, GitLab `mr_iid` |
+| `api_url` | `CONVISO_BASE_URL` | Defaults to `https://api.convisoappsec.com` |
+| `company_id` | `CONVISO_COMPANY_ID` | Sent by **Run AST**; otherwise the project variable is used |
+| `asset_id` | `CONVISO_ASSET_ID` | Empty means resolve by repository name |
+| `scan_run_id` | `CONVISO_SCAN_RUN_ID` | Links this execution to the run in the platform |
 
-`CONVISO_APIKEY`, `CONVISO_BASE_URL` and `CONVISO_COMPANY_ID` are required by the scanner —
-a run without them fails at startup. The secret you create is named `CONVISO_API_KEY`; the
-pipeline passes it to the scanner as `CONVISO_APIKEY`, which is the name the scanner reads.
+`CONVISO_APIKEY`, `CONVISO_BASE_URL` and `CONVISO_COMPANY_ID` are required by the scanner.
+The secret you create is named `CONVISO_API_KEY`; the pipeline maps it to `CONVISO_APIKEY`.
+
+Providers differ only where the CI forces it: `--provider`, clone URL/auth, and YAML syntax.
+Azure also needs an empty container entrypoint and publishes artifacts from the host.
 
 ## How the clone credential is obtained
 
-The scanner image ships `conviso-ast-repository-token`, which reads the variables above and
-prints a credential for the repository under scan:
+The scanner image ships `conviso-ast-repository-token`, which prints a credential for the
+repository under scan:
 
 ```bash
-conviso-ast-repository-token --provider github    # or gitlab, azure_devops
+conviso-ast-repository-token --provider github         # or gitlab, azure_devops, bitbucket
 ```
 
-The pipeline calls it before checkout and hands the result to the clone step. It lives in the
-image rather than in this file so a fix reaches you through a scanner release, instead of
-requiring you to re-copy the template.
-
-It prints **only** the token on stdout — errors go to stderr and exit non-zero — so it is safe
-to read with `$(...)`.
+The pipeline calls it before checkout and hands the result to the clone step. It prints
+**only** the token on stdout — errors go to stderr and exit non-zero.
 
 ## Keeping it current
 
