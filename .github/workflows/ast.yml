@@ -47,7 +47,7 @@ jobs:
       - name: Get repository token
         id: repo_token
         env:
-          CONVISO_APIKEY: ${{ secrets.CONVISO_API_KEY }}
+          CONVISO_API_KEY: ${{ secrets.CONVISO_API_KEY }}
           API_URL: ${{ inputs.api_url }}
           CONVISO_REPO_FULL_NAME: ${{ inputs.repo_full_name }}
           ASSET_ID: ${{ inputs.asset_id }}
@@ -87,7 +87,7 @@ jobs:
 
       - name: Run Conviso AST
         env:
-          CONVISO_APIKEY: ${{ secrets.CONVISO_API_KEY }}
+          CONVISO_API_KEY: ${{ secrets.CONVISO_API_KEY }}
           CONVISO_BASE_URL: ${{ steps.repo_token.outputs.base_url }}
           CONVISO_COMPANY_ID: ${{ inputs.company_id || vars.CONVISO_COMPANY_ID }}
           ASSET_ID: ${{ inputs.asset_id }}
